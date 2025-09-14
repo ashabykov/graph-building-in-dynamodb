@@ -34,20 +34,28 @@ func (uc *UseCase) Update(ctx context.Context, user supply.Supply) error {
 		return nil
 	}
 
-	orderMap := make(map[string]struct{}, len(orders))
-	for _, order := range orders {
-		orderMap[order.ID] = struct{}{}
-	}
-
 	oldEdges, err := uc.graphBuilder.ReadEdgesToNode(ctx, graph.Node(user.ID))
 	if err != nil {
 		return err
 	}
 
-	toRem := make([]graph.Edge, len(oldEdges))
-	for _, e := range oldEdges {
-		if _, ok := orderMap[e.From.String()]; !ok {
-			toRem = append(toRem, e)
+	var errr error
+
+	// Remove old edges that are not in the current orders
+	if len(oldEdges) > 0 {
+		newOrders := make(map[string]struct{}, len(orders))
+		for _, order := range orders {
+			newOrders[order.ID] = struct{}{}
+		}
+
+		toRem := make([]graph.Edge, len(oldEdges))
+		for _, e := range oldEdges {
+			if _, ok := newOrders[e.From.String()]; !ok {
+				toRem = append(toRem, e)
+			}
+		}
+		if err = uc.graphBuilder.RemoveEdges(ctx, toRem...); err != nil {
+			errr = errors.Join(errr, err)
 		}
 	}
 
@@ -67,11 +75,7 @@ func (uc *UseCase) Update(ctx context.Context, user supply.Supply) error {
 			TTL:   ttl,
 		})
 	}
-	var errr error
 	if err = uc.graphBuilder.UpsertEdges(ctx, addEdges...); err != nil {
-		errr = errors.Join(errr, err)
-	}
-	if err = uc.graphBuilder.RemoveEdges(ctx, toRem...); err != nil {
 		errr = errors.Join(errr, err)
 	}
 	return errr

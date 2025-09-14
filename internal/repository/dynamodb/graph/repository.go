@@ -44,6 +44,10 @@ func (r *Repository) Size(ctx context.Context) int {
 
 // UpsertEdges adds or updates edges in the graph.
 func (r *Repository) UpsertEdges(ctx context.Context, edges ...graph.Edge) error {
+	if len(edges) == 0 {
+		return nil
+	}
+
 	seen := make(map[string]types.WriteRequest, len(edges))
 	for _, dto := range makeDTO(edges...) {
 		// marshal to dynamodb av
@@ -239,6 +243,10 @@ func (r *Repository) ReadAreaEdges(ctx context.Context, area graph.Area) ([]grap
 
 // RemoveEdges removes specific edges from the graph.
 func (r *Repository) RemoveEdges(ctx context.Context, edges ...graph.Edge) error {
+	if len(edges) == 0 {
+		return nil
+	}
+
 	seen := make(map[string]types.WriteRequest, len(edges))
 	for _, dto := range makeDTO(edges...) {
 		key := dto.PK + "|" + dto.SK
