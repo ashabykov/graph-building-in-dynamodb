@@ -17,12 +17,16 @@ type (
 	}
 )
 
+func (n Node) String() string {
+	return string(n)
+}
+
 func (n Node) Node() string {
-	return "NODE#" + string(n)
+	return "NODE#" + n.String()
 }
 
 func (n Node) Edge() string {
-	return "EDGE#" + string(n)
+	return "EDGE#" + n.String()
 }
 
 func (a Area) Key() string {
