@@ -50,18 +50,13 @@ func (r *Repository) UpsertEdges(ctx context.Context, edges ...graph.Edge) error
 
 	seen := make(map[string]types.WriteRequest, len(edges))
 	for _, dto := range makeDTO(edges...) {
-		// marshal to dynamodb av
 		av, err := attributevalue.MarshalMap(dto)
 		if err != nil {
 			return fmt.Errorf("failed to marshal edge: %w", err)
 		}
-
-		// set ttl for item
 		av["ttl"] = &types.AttributeValueMemberN{
 			Value: strconv.FormatInt(dto.TTL, 10),
 		}
-
-		// add to batch write requests
 		key := dto.PK + "|" + dto.SK
 		seen[key] = types.WriteRequest{
 			PutRequest: &types.PutRequest{Item: av},
@@ -88,7 +83,6 @@ func (r *Repository) UpsertEdges(ctx context.Context, edges ...graph.Edge) error
 // ReadNodeToEdges retrieves all edges associated with a specific node.
 func (r *Repository) ReadNodeToEdges(ctx context.Context, node graph.Node) ([]graph.Edge, error) {
 	key := node.Node()
-
 	queryResult, err := r.client.Query(ctx, &dynamodb.QueryInput{
 		TableName:              aws.String(tableName),
 		KeyConditionExpression: aws.String("pk = :pk"),
