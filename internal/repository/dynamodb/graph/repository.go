@@ -1,0 +1,313 @@
+package graph
+
+import (
+	"context"
+	"fmt"
+	"strconv"
+	"time"
+
+	"github.com/ashabykov/graph-building-in-dynamodb/internal/domain/graph"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+)
+
+const tableName = "graph"
+
+type edgeDTO struct {
+	PK    string  `dynamodbav:"pk"`    // NODE#{FromNodeName}
+	SK    string  `dynamodbav:"sk"`    // EDGE#{ToNodeName}
+	AK    string  `dynamodbav:"ak"`    // AREA#{AreaName}
+	Score float64 `dynamodbav:"score"` // score of the edge
+	TTL   int64   `dynamodbav:"ttl"`   // time to live (epoch time in seconds)
+}
+
+type Repository struct {
+	client *dynamodb.Client
+}
+
+func New(client *dynamodb.Client) *Repository {
+	return &Repository{client: client}
+}
+
+func (r *Repository) Size(ctx context.Context) int {
+	out, err := r.client.DescribeTable(ctx, &dynamodb.DescribeTableInput{
+		TableName: aws.String(tableName),
+	})
+	if err != nil || out.Table == nil || out.Table.ItemCount == nil {
+		return 0
+	}
+	return int(*out.Table.ItemCount)
+}
+
+// UpsertEdges adds or updates edges in the graph.
+func (r *Repository) UpsertEdges(ctx context.Context, edges ...graph.Edge) error {
+	writeMap := make(map[string]types.WriteRequest, len(edges))
+	for _, dto := range makeDTO(edges...) {
+		// marshal to dynamodb av
+		av, err := attributevalue.MarshalMap(dto)
+		if err != nil {
+			return fmt.Errorf("failed to marshal edge: %w", err)
+		}
+
+		// set ttl for item
+		av["ttl"] = &types.AttributeValueMemberN{
+			Value: strconv.FormatInt(dto.TTL, 10),
+		}
+
+		// add to batch write requests
+		key := dto.PK + "|" + dto.SK
+		writeMap[key] = types.WriteRequest{
+			PutRequest: &types.PutRequest{Item: av},
+		}
+	}
+
+	// convert map to slice
+	writeRequests := make([]types.WriteRequest, 0, len(writeMap))
+	for _, wr := range writeMap {
+		writeRequests = append(writeRequests, wr)
+	}
+
+	_, err := r.client.BatchWriteItem(ctx, &dynamodb.BatchWriteItemInput{
+		RequestItems: map[string][]types.WriteRequest{
+			tableName: writeRequests,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to batch write edges: %w", err)
+	}
+	return nil
+}
+
+// ReadNodeToEdges retrieves all edges associated with a specific node.
+func (r *Repository) ReadNodeToEdges(ctx context.Context, node graph.Node) ([]graph.Edge, error) {
+	nodeKey := fmt.Sprintf("NODE#%s", node)
+	queryResult, err := r.client.Query(ctx, &dynamodb.QueryInput{
+		TableName:              aws.String(tableName),
+		KeyConditionExpression: aws.String("pk = :pk"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk": &types.AttributeValueMemberS{Value: nodeKey},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to query edges: %w", err)
+	}
+
+	edges := make([]graph.Edge, 0, len(queryResult.Items))
+	for _, item := range queryResult.Items {
+		var dto edgeDTO
+
+		err = attributevalue.UnmarshalMap(item, &dto)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal edge: %w", err)
+		}
+
+		// Извлекаем имена узлов из ключей
+		fromName := dto.PK[5:] // Убираем "NODE#"
+		toName := dto.SK[5:]   // Убираем "EDGE#"
+		area := dto.AK[5:]     // Убираем "AREA#"
+
+		edges = append(edges, graph.Edge{
+			From:  graph.Node(fromName),
+			To:    graph.Node(toName),
+			Score: graph.Score(dto.Score),
+			Area:  graph.Area(area),
+		})
+	}
+	return edges, nil
+}
+
+// ReadEdgesToNode retrieves all edges directed to a specific node.
+func (r *Repository) ReadEdgesToNode(ctx context.Context, node graph.Node) ([]graph.Edge, error) {
+	key := fmt.Sprintf("EDGE#%s", node)
+
+	var last map[string]types.AttributeValue
+	edges := make([]graph.Edge, 0)
+	for {
+		out, err := r.client.Query(ctx, &dynamodb.QueryInput{
+			TableName:              aws.String(tableName),
+			IndexName:              aws.String("sk-gsi"),
+			KeyConditionExpression: aws.String("sk = :sk"),
+			ExpressionAttributeValues: map[string]types.AttributeValue{
+				":sk": &types.AttributeValueMemberS{
+					Value: key,
+				},
+			},
+			ExclusiveStartKey: last,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to query edges by area: %w", err)
+		}
+
+		for _, item := range out.Items {
+			var dto edgeDTO
+
+			if err = attributevalue.UnmarshalMap(item, &dto); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal edge: %w", err)
+			}
+
+			fromName := ""
+			if len(dto.PK) > 5 {
+				fromName = dto.PK[5:]
+			}
+			toName := ""
+			if len(dto.SK) > 5 {
+				toName = dto.SK[5:]
+			}
+			areaName := ""
+			if len(dto.AK) > 5 {
+				areaName = dto.AK[5:]
+			}
+
+			edges = append(edges, graph.Edge{
+				From:  graph.Node(fromName),
+				To:    graph.Node(toName),
+				Score: graph.Score(dto.Score),
+				Area:  graph.Area(areaName),
+			})
+		}
+
+		if out.LastEvaluatedKey == nil || len(out.LastEvaluatedKey) == 0 {
+			break
+		}
+		last = out.LastEvaluatedKey
+	}
+	return edges, nil
+}
+
+// ReadAreaEdges retrieves all edges associated with a specific area.
+func (r *Repository) ReadAreaEdges(ctx context.Context, area graph.Area) ([]graph.Edge, error) {
+	key := area.Key()
+
+	var last map[string]types.AttributeValue
+	edges := make([]graph.Edge, 0)
+
+	for {
+		out, err := r.client.Query(ctx, &dynamodb.QueryInput{
+			TableName:              aws.String(tableName),
+			IndexName:              aws.String("ak-gsi"),
+			KeyConditionExpression: aws.String("ak = :ak"),
+			ExpressionAttributeValues: map[string]types.AttributeValue{
+				":ak": &types.AttributeValueMemberS{
+					Value: key,
+				},
+			},
+			ExclusiveStartKey: last,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to query edges by area: %w", err)
+		}
+
+		for _, item := range out.Items {
+			var dto edgeDTO
+			if err = attributevalue.UnmarshalMap(item, &dto); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal edge: %w", err)
+			}
+
+			fromName := ""
+			if len(dto.PK) > 5 {
+				fromName = dto.PK[5:]
+			}
+			toName := ""
+			if len(dto.SK) > 5 {
+				toName = dto.SK[5:]
+			}
+			areaName := ""
+			if len(dto.AK) > 5 {
+				areaName = dto.AK[5:]
+			}
+
+			edges = append(edges, graph.Edge{
+				From:  graph.Node(fromName),
+				To:    graph.Node(toName),
+				Score: graph.Score(dto.Score),
+				Area:  graph.Area(areaName),
+			})
+		}
+
+		if out.LastEvaluatedKey == nil || len(out.LastEvaluatedKey) == 0 {
+			break
+		}
+		last = out.LastEvaluatedKey
+	}
+
+	return edges, nil
+}
+
+// RemoveEdges removes specific edges from the graph.
+func (r *Repository) RemoveEdges(ctx context.Context, edges ...graph.Edge) error {
+	writeMap := make(map[string]types.WriteRequest, len(edges))
+	for _, dto := range makeDTO(edges...) {
+		key := dto.PK + "|" + dto.SK
+		writeMap[key] = types.WriteRequest{
+			DeleteRequest: &types.DeleteRequest{
+				Key: map[string]types.AttributeValue{
+					"pk": &types.AttributeValueMemberS{
+						Value: dto.PK,
+					},
+					"sk": &types.AttributeValueMemberS{
+						Value: dto.SK,
+					},
+				},
+			},
+		}
+	}
+	writeRequests := make([]types.WriteRequest, 0, len(writeMap))
+	for _, edge := range writeMap {
+		writeRequests = append(writeRequests, types.WriteRequest{
+			DeleteRequest: edge.DeleteRequest,
+		})
+	}
+	_, err := r.client.BatchWriteItem(ctx, &dynamodb.BatchWriteItemInput{
+		RequestItems: map[string][]types.WriteRequest{
+			tableName: writeRequests,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to batch write edges: %w", err)
+	}
+	return nil
+}
+
+// RemoveNodeEdges removes all edges associated with a specific node.
+func (r *Repository) RemoveNodeEdges(ctx context.Context, node graph.Node) error {
+	// Сначала получаем все рёбра от узла
+	outEdges, err := r.ReadNodeToEdges(ctx, node)
+	if err != nil {
+		return fmt.Errorf("failed to query node edges: %w", err)
+	}
+	// Затем получаем все рёбра к узлу
+	inEdges, err := r.ReadEdgesToNode(ctx, node)
+	if err != nil {
+		return fmt.Errorf("failed to query node edges: %w", err)
+	}
+	edges := append(outEdges, inEdges...)
+	if len(edges) == 0 {
+		return nil // Нет рёбер для удаления
+	}
+
+	// Удаляем все рёбра данного узла
+	err = r.RemoveEdges(ctx, edges...)
+	if err != nil {
+		return fmt.Errorf("failed to remove node edges: %w", err)
+	}
+	return nil
+}
+
+func makeDTO(edges ...graph.Edge) []edgeDTO {
+	items := make([]edgeDTO, 0, len(edges))
+	for _, edge := range edges {
+		ttl := time.Now().UTC().Add(edge.TTL).Unix()
+		dto := edgeDTO{
+			PK:    edge.From.Node(),
+			SK:    edge.To.Edge(),
+			AK:    edge.Area.Key(),
+			Score: edge.Score.Float64(),
+			TTL:   ttl,
+		}
+		items = append(items, dto)
+	}
+	return items
+}
