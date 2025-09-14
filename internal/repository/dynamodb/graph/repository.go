@@ -44,7 +44,7 @@ func (r *Repository) Size(ctx context.Context) int {
 
 // UpsertEdges adds or updates edges in the graph.
 func (r *Repository) UpsertEdges(ctx context.Context, edges ...graph.Edge) error {
-	writeMap := make(map[string]types.WriteRequest, len(edges))
+	seen := make(map[string]types.WriteRequest, len(edges))
 	for _, dto := range makeDTO(edges...) {
 		// marshal to dynamodb av
 		av, err := attributevalue.MarshalMap(dto)
@@ -59,14 +59,14 @@ func (r *Repository) UpsertEdges(ctx context.Context, edges ...graph.Edge) error
 
 		// add to batch write requests
 		key := dto.PK + "|" + dto.SK
-		writeMap[key] = types.WriteRequest{
+		seen[key] = types.WriteRequest{
 			PutRequest: &types.PutRequest{Item: av},
 		}
 	}
 
 	// convert map to slice
-	writeRequests := make([]types.WriteRequest, 0, len(writeMap))
-	for _, wr := range writeMap {
+	writeRequests := make([]types.WriteRequest, 0, len(seen))
+	for _, wr := range seen {
 		writeRequests = append(writeRequests, wr)
 	}
 
@@ -239,10 +239,10 @@ func (r *Repository) ReadAreaEdges(ctx context.Context, area graph.Area) ([]grap
 
 // RemoveEdges removes specific edges from the graph.
 func (r *Repository) RemoveEdges(ctx context.Context, edges ...graph.Edge) error {
-	writeMap := make(map[string]types.WriteRequest, len(edges))
+	seen := make(map[string]types.WriteRequest, len(edges))
 	for _, dto := range makeDTO(edges...) {
 		key := dto.PK + "|" + dto.SK
-		writeMap[key] = types.WriteRequest{
+		seen[key] = types.WriteRequest{
 			DeleteRequest: &types.DeleteRequest{
 				Key: map[string]types.AttributeValue{
 					"pk": &types.AttributeValueMemberS{
@@ -255,8 +255,8 @@ func (r *Repository) RemoveEdges(ctx context.Context, edges ...graph.Edge) error
 			},
 		}
 	}
-	writeRequests := make([]types.WriteRequest, 0, len(writeMap))
-	for _, edge := range writeMap {
+	writeRequests := make([]types.WriteRequest, 0, len(seen))
+	for _, edge := range seen {
 		writeRequests = append(writeRequests, types.WriteRequest{
 			DeleteRequest: edge.DeleteRequest,
 		})
