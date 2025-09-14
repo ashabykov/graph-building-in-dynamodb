@@ -83,12 +83,13 @@ func (r *Repository) UpsertEdges(ctx context.Context, edges ...graph.Edge) error
 
 // ReadNodeToEdges retrieves all edges associated with a specific node.
 func (r *Repository) ReadNodeToEdges(ctx context.Context, node graph.Node) ([]graph.Edge, error) {
-	nodeKey := fmt.Sprintf("NODE#%s", node)
+	key := node.Node()
+
 	queryResult, err := r.client.Query(ctx, &dynamodb.QueryInput{
 		TableName:              aws.String(tableName),
 		KeyConditionExpression: aws.String("pk = :pk"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pk": &types.AttributeValueMemberS{Value: nodeKey},
+			":pk": &types.AttributeValueMemberS{Value: key},
 		},
 	})
 	if err != nil {
@@ -121,7 +122,7 @@ func (r *Repository) ReadNodeToEdges(ctx context.Context, node graph.Node) ([]gr
 
 // ReadEdgesToNode retrieves all edges directed to a specific node.
 func (r *Repository) ReadEdgesToNode(ctx context.Context, node graph.Node) ([]graph.Edge, error) {
-	key := fmt.Sprintf("EDGE#%s", node)
+	key := node.Edge()
 
 	var last map[string]types.AttributeValue
 	edges := make([]graph.Edge, 0)
