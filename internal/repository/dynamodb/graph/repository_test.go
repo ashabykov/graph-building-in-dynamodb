@@ -163,7 +163,7 @@ func TestRepository_UpdateEdges(t *testing.T) {
 		size := repo.Size(context.Background())
 		assert.Equal(t, 1, size)
 
-		edges, err := repo.ReadNodeToEdges(context.Background(), "A")
+		edges, err := repo.ReadOutEdges(context.Background(), "A")
 		assert.NoError(t, err)
 		assert.Len(t, edges, 1)
 		assert.Equal(t, graph.Score(20), edges[0].Score) // Score should be updated to 20
@@ -203,14 +203,14 @@ func TestRepository_UpdateEdges(t *testing.T) {
 		size := repo.Size(context.Background())
 		assert.Equal(t, 1, size)
 
-		edges, err := repo.ReadNodeToEdges(context.Background(), "A")
+		edges, err := repo.ReadOutEdges(context.Background(), "A")
 		assert.NoError(t, err)
 		assert.Len(t, edges, 1)
 		assert.Equal(t, graph.Area("Area2"), edges[0].Area) // Area should be updated to Area2
 	})
 }
 
-func TestRepository_ReadNodeToEdges(t *testing.T) {
+func TestRepository_ReadOutEdges(t *testing.T) {
 	t.Run("Get edges from dynamodb", func(t *testing.T) {
 
 		db, err := dynamodb.NewTestDatabase()
@@ -286,14 +286,14 @@ func TestRepository_ReadNodeToEdges(t *testing.T) {
 		err = repo.UpsertEdges(context.Background(), edges...)
 		assert.NoError(t, err)
 
-		retrievedEdges, err := repo.ReadNodeToEdges(context.Background(), "A")
+		retrievedEdges, err := repo.ReadOutEdges(context.Background(), "A")
 		assert.NoError(t, err)
 
 		assert.EqualValues(t, expected, retrievedEdges)
 	})
 }
 
-func TestRepository_ReadEdgesToNode(t *testing.T) {
+func TestRepository_ReadInEdges(t *testing.T) {
 	t.Run("Get edges from dynamodb", func(t *testing.T) {
 		db, err := dynamodb.NewTestDatabase()
 		assert.NoError(t, err)
@@ -354,7 +354,7 @@ func TestRepository_ReadEdgesToNode(t *testing.T) {
 		err = repo.UpsertEdges(context.Background(), edges...)
 		assert.NoError(t, err)
 
-		retrievedEdges, err := repo.ReadEdgesToNode(context.Background(), "B")
+		retrievedEdges, err := repo.ReadInEdges(context.Background(), "B")
 		assert.NoError(t, err)
 		sort.Slice(retrievedEdges, func(i, j int) bool {
 			return retrievedEdges[i].From < retrievedEdges[j].From && retrievedEdges[i].To < retrievedEdges[j].To
@@ -490,11 +490,11 @@ func TestRepository_RemoveEdges(t *testing.T) {
 		size = repo.Size(context.Background())
 		assert.Equal(t, 2, size)
 
-		retrievedEdges, err := repo.ReadNodeToEdges(context.Background(), "A")
+		retrievedEdges, err := repo.ReadOutEdges(context.Background(), "A")
 		assert.NoError(t, err)
 		assert.Len(t, retrievedEdges, 0) // All edges from A should be removed
 
-		retrievedEdges, err = repo.ReadNodeToEdges(context.Background(), "B")
+		retrievedEdges, err = repo.ReadOutEdges(context.Background(), "B")
 		assert.NoError(t, err)
 		assert.Len(t, retrievedEdges, 1) // Only edge to C should remain
 		assert.Equal(t, graph.Node("C"), retrievedEdges[0].To)
@@ -558,17 +558,17 @@ func TestRepository_RemoveNodeEdges(t *testing.T) {
 		assert.Equal(t, 1, size) // Only edges not related to "B" should remain
 
 		// Verify no edges from "B"
-		retrievedEdges, err := repo.ReadNodeToEdges(context.Background(), "B")
+		retrievedEdges, err := repo.ReadOutEdges(context.Background(), "B")
 		assert.NoError(t, err)
 		assert.Len(t, retrievedEdges, 0)
 
 		// Verify edges from "A"
-		retrievedEdges, err = repo.ReadNodeToEdges(context.Background(), "A")
+		retrievedEdges, err = repo.ReadOutEdges(context.Background(), "A")
 		assert.NoError(t, err)
 		assert.Len(t, retrievedEdges, 0)
 
 		// Verify edges from "C"
-		retrievedEdges, err = repo.ReadNodeToEdges(context.Background(), "C")
+		retrievedEdges, err = repo.ReadOutEdges(context.Background(), "C")
 		assert.NoError(t, err)
 		assert.Len(t, retrievedEdges, 1)
 		assert.Equal(t, graph.Node("D"), retrievedEdges[0].To) // Edge to D should still exist

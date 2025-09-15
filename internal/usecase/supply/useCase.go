@@ -17,7 +17,7 @@ type demandReader interface {
 type graphBuilder interface {
 	UpsertEdges(ctx context.Context, edges ...graph.Edge) error
 	RemoveEdges(ctx context.Context, edges ...graph.Edge) error
-	ReadEdgesToNode(ctx context.Context, node graph.Node) ([]graph.Edge, error)
+	ReadInEdges(ctx context.Context, node graph.Node) ([]graph.Edge, error)
 }
 
 type UseCase struct {
@@ -34,7 +34,7 @@ func (uc *UseCase) Update(ctx context.Context, user supply.Supply) error {
 		return nil
 	}
 
-	oldEdges, err := uc.graphBuilder.ReadEdgesToNode(ctx, graph.Node(user.ID))
+	oldEdges, err := uc.graphBuilder.ReadInEdges(ctx, graph.Node(user.ID))
 	if err != nil {
 		return err
 	}

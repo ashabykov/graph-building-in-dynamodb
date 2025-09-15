@@ -80,8 +80,8 @@ func (r *Repository) UpsertEdges(ctx context.Context, edges ...graph.Edge) error
 	return nil
 }
 
-// ReadNodeToEdges retrieves all edges associated with a specific node.
-func (r *Repository) ReadNodeToEdges(ctx context.Context, node graph.Node) ([]graph.Edge, error) {
+// ReadOutEdges retrieves all edges associated with a specific node.
+func (r *Repository) ReadOutEdges(ctx context.Context, node graph.Node) ([]graph.Edge, error) {
 	key := node.Node()
 	queryResult, err := r.client.Query(ctx, &dynamodb.QueryInput{
 		TableName:              aws.String(tableName),
@@ -118,8 +118,8 @@ func (r *Repository) ReadNodeToEdges(ctx context.Context, node graph.Node) ([]gr
 	return edges, nil
 }
 
-// ReadEdgesToNode retrieves all edges directed to a specific node.
-func (r *Repository) ReadEdgesToNode(ctx context.Context, node graph.Node) ([]graph.Edge, error) {
+// ReadInEdges retrieves all edges directed to a specific node.
+func (r *Repository) ReadInEdges(ctx context.Context, node graph.Node) ([]graph.Edge, error) {
 	key := node.Edge()
 
 	var last map[string]types.AttributeValue
@@ -277,12 +277,12 @@ func (r *Repository) RemoveEdges(ctx context.Context, edges ...graph.Edge) error
 // RemoveNodeEdges removes all edges associated with a specific node.
 func (r *Repository) RemoveNodeEdges(ctx context.Context, node graph.Node) error {
 	// Сначала получаем все рёбра от узла
-	outEdges, err := r.ReadNodeToEdges(ctx, node)
+	outEdges, err := r.ReadOutEdges(ctx, node)
 	if err != nil {
 		return fmt.Errorf("failed to query node edges: %w", err)
 	}
 	// Затем получаем все рёбра к узлу
-	inEdges, err := r.ReadEdgesToNode(ctx, node)
+	inEdges, err := r.ReadInEdges(ctx, node)
 	if err != nil {
 		return fmt.Errorf("failed to query node edges: %w", err)
 	}
