@@ -25,6 +25,7 @@ type UseCase struct {
 	graphBuilder graphBuilder
 }
 
+// Update обновляет ребра графа на основе нового события из топика водителей.
 func (uc *UseCase) Update(ctx context.Context, user supply.Supply) error {
 	orders, err := uc.demandReader.FindBy(ctx, user)
 	if err != nil {
