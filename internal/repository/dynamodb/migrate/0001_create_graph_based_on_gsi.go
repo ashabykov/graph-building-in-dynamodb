@@ -109,5 +109,12 @@ func (m *CreateBasedOnGSITable) Down(ctx context.Context, client *dynamodb.Clien
 		TableName: aws.String(m.TableName()),
 	}
 	_, err := client.DeleteTable(ctx, input)
-	return err
+	if err != nil {
+		return err
+	}
+
+	waiter := dynamodb.NewTableNotExistsWaiter(client)
+	return waiter.Wait(ctx, &dynamodb.DescribeTableInput{
+		TableName: aws.String(m.TableName()),
+	}, 5*time.Minute)
 }

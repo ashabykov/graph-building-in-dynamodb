@@ -83,7 +83,6 @@ func (m *CreateBasedOnAdjacencyListTable) Up(ctx context.Context, client *dynamo
 	err = waiter.Wait(ctx, &dynamodb.DescribeTableInput{
 		TableName: aws.String(m.TableName()),
 	}, 5*time.Minute)
-
 	return err
 }
 
@@ -91,7 +90,13 @@ func (m *CreateBasedOnAdjacencyListTable) Down(ctx context.Context, client *dyna
 	input := &dynamodb.DeleteTableInput{
 		TableName: aws.String(m.TableName()),
 	}
-
 	_, err := client.DeleteTable(ctx, input)
-	return err
+	if err != nil {
+		return err
+	}
+
+	waiter := dynamodb.NewTableNotExistsWaiter(client)
+	return waiter.Wait(ctx, &dynamodb.DescribeTableInput{
+		TableName: aws.String(m.TableName()),
+	}, 5*time.Minute)
 }
