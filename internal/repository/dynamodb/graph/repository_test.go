@@ -110,7 +110,7 @@ func TestRepository_UpsertEdges(t *testing.T) {
 
 			assert.NoError(t, err)
 
-			defer db.RollbackMigration(context.Background())
+			defer db.Rollback(context.Background())
 
 			repo := New(db.Client)
 
@@ -133,7 +133,7 @@ func TestRepository_UpdateEdges(t *testing.T) {
 
 		assert.NoError(t, err)
 
-		defer db.RollbackMigration(context.Background())
+		defer db.Rollback(context.Background())
 
 		repo := New(db.Client)
 
@@ -175,7 +175,7 @@ func TestRepository_UpdateEdges(t *testing.T) {
 		err = db.Migrate(context.Background())
 		assert.NoError(t, err)
 
-		defer db.RollbackMigration(context.Background())
+		defer db.Rollback(context.Background())
 
 		repo := New(db.Client)
 
@@ -221,7 +221,7 @@ func TestRepository_ReadOutEdges(t *testing.T) {
 
 		assert.NoError(t, err)
 
-		defer db.RollbackMigration(context.Background())
+		defer db.Rollback(context.Background())
 
 		repo := New(db.Client)
 
@@ -301,7 +301,7 @@ func TestRepository_ReadInEdges(t *testing.T) {
 		err = db.Migrate(context.Background())
 		assert.NoError(t, err)
 
-		defer db.RollbackMigration(context.Background())
+		defer db.Rollback(context.Background())
 
 		repo := New(db.Client)
 
@@ -373,7 +373,7 @@ func TestRepository_ReadAreaEdges(t *testing.T) {
 
 		assert.NoError(t, err)
 
-		defer db.RollbackMigration(context.Background())
+		defer db.Rollback(context.Background())
 
 		repo := New(db.Client)
 
@@ -438,7 +438,7 @@ func TestRepository_RemoveEdges(t *testing.T) {
 
 		assert.NoError(t, err)
 
-		defer db.RollbackMigration(context.Background())
+		defer db.Rollback(context.Background())
 
 		repo := New(db.Client)
 
@@ -510,7 +510,7 @@ func TestRepository_RemoveNodeEdges(t *testing.T) {
 		err = db.Migrate(context.Background())
 		assert.NoError(t, err)
 
-		defer db.RollbackMigration(context.Background())
+		defer db.Rollback(context.Background())
 
 		repo := New(db.Client)
 
