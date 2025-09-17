@@ -9,22 +9,17 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
 
-const (
-	TableName = "graph"
-	Version   = "20250405000000_graph_table"
-)
+type CreateBasedOnAdjacencyListTable struct{}
 
-type CreateGraphTable struct{}
-
-func (m *CreateGraphTable) Version() string {
-	return Version
+func (m *CreateBasedOnAdjacencyListTable) Version() string {
+	return "20250405000000_graph_based_on_adjacency_list_table"
 }
 
-func (m *CreateGraphTable) TableName() string {
-	return TableName
+func (m *CreateBasedOnAdjacencyListTable) TableName() string {
+	return "graph_based_on_adjacency_list_tbl"
 }
 
-func (m *CreateGraphTable) Up(ctx context.Context, client *dynamodb.Client) error {
+func (m *CreateBasedOnAdjacencyListTable) Up(ctx context.Context, client *dynamodb.Client) error {
 	input := &dynamodb.CreateTableInput{
 		// Define attribute definitions for the table
 		AttributeDefinitions: []types.AttributeDefinition{
@@ -37,7 +32,7 @@ func (m *CreateGraphTable) Up(ctx context.Context, client *dynamodb.Client) erro
 				AttributeType: types.ScalarAttributeTypeS,
 			},
 			{
-				AttributeName: aws.String("ak"), // Доп. Sort Key для LSI
+				AttributeName: aws.String("ak"), // Доп. Sort Key для GSI
 				AttributeType: types.ScalarAttributeTypeS,
 			},
 		},
@@ -55,22 +50,6 @@ func (m *CreateGraphTable) Up(ctx context.Context, client *dynamodb.Client) erro
 		// Добавляем GSI по ak как partition key для быстрых запросов по area
 		GlobalSecondaryIndexes: []types.GlobalSecondaryIndex{
 			{
-				IndexName: aws.String("sk-gsi"),
-				KeySchema: []types.KeySchemaElement{
-					{
-						AttributeName: aws.String("sk"),
-						KeyType:       types.KeyTypeHash,
-					},
-				},
-				Projection: &types.Projection{
-					ProjectionType: types.ProjectionTypeAll,
-				},
-				ProvisionedThroughput: &types.ProvisionedThroughput{
-					ReadCapacityUnits:  aws.Int64(1),
-					WriteCapacityUnits: aws.Int64(1),
-				},
-			},
-			{
 				IndexName: aws.String("ak-gsi"),
 				KeySchema: []types.KeySchemaElement{
 					{
@@ -82,15 +61,15 @@ func (m *CreateGraphTable) Up(ctx context.Context, client *dynamodb.Client) erro
 					ProjectionType: types.ProjectionTypeAll,
 				},
 				ProvisionedThroughput: &types.ProvisionedThroughput{
-					ReadCapacityUnits:  aws.Int64(1),
-					WriteCapacityUnits: aws.Int64(1),
+					ReadCapacityUnits:  aws.Int64(1000),
+					WriteCapacityUnits: aws.Int64(1000),
 				},
 			},
 		},
-		TableName: aws.String(TableName),
+		TableName: aws.String(m.TableName()),
 		ProvisionedThroughput: &types.ProvisionedThroughput{
-			ReadCapacityUnits:  aws.Int64(1),
-			WriteCapacityUnits: aws.Int64(1),
+			ReadCapacityUnits:  aws.Int64(1000),
+			WriteCapacityUnits: aws.Int64(1000),
 		},
 	}
 
@@ -102,15 +81,15 @@ func (m *CreateGraphTable) Up(ctx context.Context, client *dynamodb.Client) erro
 
 	waiter := dynamodb.NewTableExistsWaiter(client)
 	err = waiter.Wait(ctx, &dynamodb.DescribeTableInput{
-		TableName: aws.String(TableName),
+		TableName: aws.String(m.TableName()),
 	}, 5*time.Minute)
 
 	return err
 }
 
-func (m *CreateGraphTable) Down(ctx context.Context, client *dynamodb.Client) error {
+func (m *CreateBasedOnAdjacencyListTable) Down(ctx context.Context, client *dynamodb.Client) error {
 	input := &dynamodb.DeleteTableInput{
-		TableName: aws.String(TableName),
+		TableName: aws.String(m.TableName()),
 	}
 
 	_, err := client.DeleteTable(ctx, input)

@@ -1,4 +1,4 @@
-package graph
+package adjacency_list
 
 import (
 	"context"

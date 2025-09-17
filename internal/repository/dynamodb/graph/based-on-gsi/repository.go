@@ -1,8 +1,10 @@
-package graph
+package based_on_gsi
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"time"
 
@@ -14,7 +16,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
 
-const tableName = "graph"
+const (
+	TableName = "graph_based_on_gsi_tbl"
+	batchSize = 25 // Максимальный размер партии для BatchWriteItem
+)
 
 type edgeDTO struct {
 	PK    string  `dynamodbav:"pk"`    // NODE#{FromNodeName}
@@ -34,7 +39,7 @@ func New(client *dynamodb.Client) *Repository {
 
 func (r *Repository) Size(ctx context.Context) int {
 	out, err := r.client.DescribeTable(ctx, &dynamodb.DescribeTableInput{
-		TableName: aws.String(tableName),
+		TableName: aws.String(TableName),
 	})
 	if err != nil || out.Table == nil || out.Table.ItemCount == nil {
 		return 0
@@ -69,22 +74,24 @@ func (r *Repository) UpsertEdges(ctx context.Context, edges ...graph.Edge) error
 		writeRequests = append(writeRequests, wr)
 	}
 
-	_, err := r.client.BatchWriteItem(ctx, &dynamodb.BatchWriteItemInput{
-		RequestItems: map[string][]types.WriteRequest{
-			tableName: writeRequests,
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("failed to batch write edges: %w", err)
+	var writeErr error
+	for requests := range slices.Chunk(writeRequests, batchSize) {
+		if _, err := r.client.BatchWriteItem(ctx, &dynamodb.BatchWriteItemInput{
+			RequestItems: map[string][]types.WriteRequest{
+				TableName: requests,
+			},
+		}); err != nil {
+			writeErr = errors.Join(writeErr, err)
+		}
 	}
-	return nil
+	return writeErr
 }
 
 // ReadOutEdges retrieves all edges associated with a specific node.
 func (r *Repository) ReadOutEdges(ctx context.Context, node graph.Node) ([]graph.Edge, error) {
 	key := node.Node()
 	queryResult, err := r.client.Query(ctx, &dynamodb.QueryInput{
-		TableName:              aws.String(tableName),
+		TableName:              aws.String(TableName),
 		KeyConditionExpression: aws.String("pk = :pk"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk": &types.AttributeValueMemberS{Value: key},
@@ -126,7 +133,7 @@ func (r *Repository) ReadInEdges(ctx context.Context, node graph.Node) ([]graph.
 	edges := make([]graph.Edge, 0)
 	for {
 		out, err := r.client.Query(ctx, &dynamodb.QueryInput{
-			TableName:              aws.String(tableName),
+			TableName:              aws.String(TableName),
 			IndexName:              aws.String("sk-gsi"),
 			KeyConditionExpression: aws.String("sk = :sk"),
 			ExpressionAttributeValues: map[string]types.AttributeValue{
@@ -185,7 +192,7 @@ func (r *Repository) ReadAreaEdges(ctx context.Context, area graph.Area) ([]grap
 
 	for {
 		out, err := r.client.Query(ctx, &dynamodb.QueryInput{
-			TableName:              aws.String(tableName),
+			TableName:              aws.String(TableName),
 			IndexName:              aws.String("ak-gsi"),
 			KeyConditionExpression: aws.String("ak = :ak"),
 			ExpressionAttributeValues: map[string]types.AttributeValue{
@@ -263,15 +270,18 @@ func (r *Repository) RemoveEdges(ctx context.Context, edges ...graph.Edge) error
 			DeleteRequest: edge.DeleteRequest,
 		})
 	}
-	_, err := r.client.BatchWriteItem(ctx, &dynamodb.BatchWriteItemInput{
-		RequestItems: map[string][]types.WriteRequest{
-			tableName: writeRequests,
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("failed to batch write edges: %w", err)
+
+	var deleteErr error
+	for requests := range slices.Chunk(writeRequests, batchSize) {
+		if _, err := r.client.BatchWriteItem(ctx, &dynamodb.BatchWriteItemInput{
+			RequestItems: map[string][]types.WriteRequest{
+				TableName: requests,
+			},
+		}); err != nil {
+			deleteErr = errors.Join(deleteErr, err)
+		}
 	}
-	return nil
+	return deleteErr
 }
 
 // RemoveNodeEdges removes all edges associated with a specific node.

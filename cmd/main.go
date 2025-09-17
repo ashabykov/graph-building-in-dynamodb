@@ -5,7 +5,7 @@ import (
 	"log"
 
 	"github.com/ashabykov/graph-building-in-dynamodb/internal/repository/dynamodb"
-	"github.com/ashabykov/graph-building-in-dynamodb/internal/repository/dynamodb/graph"
+	"github.com/ashabykov/graph-building-in-dynamodb/internal/repository/dynamodb/graph/based-on-gsi"
 )
 
 func Run() error {
@@ -26,7 +26,7 @@ func Run() error {
 		return err
 	}
 
-	graphRepo := graph.New(dynamoDb.Client)
+	graphRepo := based_on_gsi.New(dynamoDb.Client)
 
 	return nil
 }

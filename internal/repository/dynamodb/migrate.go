@@ -17,7 +17,8 @@ type Migration interface {
 
 func (d *DynamoDb) Migrate(ctx context.Context) error {
 	migrations := []Migration{
-		&migrate.CreateGraphTable{},
+		&migrate.CreateBasedOnGSITable{},
+		&migrate.CreateBasedOnAdjacencyListTable{},
 	}
 	for _, migration := range migrations {
 		if err := migration.Up(ctx, d.Client); err != nil {
@@ -29,7 +30,8 @@ func (d *DynamoDb) Migrate(ctx context.Context) error {
 
 func (d *DynamoDb) Rollback(ctx context.Context) error {
 	migrations := []Migration{
-		&migrate.CreateGraphTable{},
+		&migrate.CreateBasedOnGSITable{},
+		&migrate.CreateBasedOnAdjacencyListTable{},
 	}
 	for _, migration := range migrations {
 		if err := migration.Down(ctx, d.Client); err != nil {
