@@ -21,6 +21,7 @@ func (m *CreateAdjacencyListsTableWithGSI) TableName() string {
 
 func (m *CreateAdjacencyListsTableWithGSI) Up(ctx context.Context, client *dynamodb.Client) error {
 	input := &dynamodb.CreateTableInput{
+		BillingMode: types.BillingModePayPerRequest,
 		// Define attribute definitions for the table
 		AttributeDefinitions: []types.AttributeDefinition{
 			{
@@ -77,17 +78,9 @@ func (m *CreateAdjacencyListsTableWithGSI) Up(ctx context.Context, client *dynam
 				Projection: &types.Projection{
 					ProjectionType: types.ProjectionTypeAll,
 				},
-				ProvisionedThroughput: &types.ProvisionedThroughput{
-					ReadCapacityUnits:  aws.Int64(1000),
-					WriteCapacityUnits: aws.Int64(1000),
-				},
 			},
 		},
 		TableName: aws.String(m.TableName()),
-		ProvisionedThroughput: &types.ProvisionedThroughput{
-			ReadCapacityUnits:  aws.Int64(1000),
-			WriteCapacityUnits: aws.Int64(1000),
-		},
 	}
 	// Add waiter after creating table to ensure it is active
 	_, err := client.CreateTable(ctx, input)
