@@ -17,19 +17,27 @@ type (
 	}
 )
 
+func (e Edge) Demand() string {
+	return e.From.Demand()
+}
+
+func (e Edge) Supply() string {
+	return e.To.Supply()
+}
+
 func (n Node) String() string {
 	return string(n)
 }
 
-func (n Node) Node() string {
-	return "NODE#" + n.String()
+func (n Node) Demand() string {
+	return "DEMAND#" + n.String()
 }
 
-func (n Node) Edge() string {
-	return "EDGE#" + n.String()
+func (n Node) Supply() string {
+	return "SUPPLY#" + n.String()
 }
 
-func (a Area) Key() string {
+func (a Area) Area() string {
 	return "AREA#" + string(a)
 }
 

@@ -1,16 +1,31 @@
-package adjacency_list
+package adjacency_lists_with_gsi_for_reverse_lookup
 
 import (
 	"context"
 	"sort"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 
 	"github.com/ashabykov/graph-building-in-dynamodb/internal/domain/graph"
-	"github.com/ashabykov/graph-building-in-dynamodb/internal/repository/dynamodb"
+	"github.com/ashabykov/graph-building-in-dynamodb/internal/repository/graph/dynamodb"
 )
+
+func makeEdges(n int) []graph.Edge {
+	edges := make([]graph.Edge, n)
+	for i := 0; i < n; i++ {
+		edges[i] = graph.Edge{
+			From:  graph.Node(strconv.Itoa(i)),
+			To:    graph.Node(strconv.Itoa(i + 1)),
+			Area:  graph.Area(strconv.Itoa(i % 3)),
+			Score: graph.Score(float64(i * 10)),
+			TTL:   24 * time.Hour,
+		}
+	}
+	return edges
+}
 
 func TestRepository_UpsertEdges(t *testing.T) {
 	testCases := []struct {
@@ -29,7 +44,7 @@ func TestRepository_UpsertEdges(t *testing.T) {
 					TTL:   24 * time.Hour,
 				},
 			},
-			expectedSize: 2,
+			expectedSize: 1,
 		},
 		{
 			name: "Insert multiple edges",
@@ -76,7 +91,7 @@ func TestRepository_UpsertEdges(t *testing.T) {
 					TTL:   24 * time.Hour,
 				},
 			},
-			expectedSize: 10,
+			expectedSize: 6,
 		},
 		{
 			name: "Insert duplicate edges",
@@ -96,7 +111,12 @@ func TestRepository_UpsertEdges(t *testing.T) {
 					TTL:   24 * time.Hour,
 				},
 			},
-			expectedSize: 2,
+			expectedSize: 1,
+		},
+		{
+			name:         "Insert more than 25 edges",
+			edges:        makeEdges(30),
+			expectedSize: 30,
 		},
 	}
 	for _, tc := range testCases {
@@ -161,9 +181,9 @@ func TestRepository_UpdateEdges(t *testing.T) {
 		assert.NoError(t, err)
 
 		size := repo.Size(context.Background())
-		assert.Equal(t, 2, size)
+		assert.Equal(t, 1, size)
 
-		edges, err := repo.ReadNodeEdges(context.Background(), "A")
+		edges, err := repo.ReadDemandEdges(context.Background(), "A")
 		assert.NoError(t, err)
 		assert.Len(t, edges, 1)
 		assert.Equal(t, graph.Score(20), edges[0].Score) // Score should be updated to 20
@@ -201,16 +221,16 @@ func TestRepository_UpdateEdges(t *testing.T) {
 		assert.NoError(t, err)
 
 		size := repo.Size(context.Background())
-		assert.Equal(t, 2, size)
+		assert.Equal(t, 1, size)
 
-		edges, err := repo.ReadNodeEdges(context.Background(), "A")
+		edges, err := repo.ReadDemandEdges(context.Background(), "A")
 		assert.NoError(t, err)
 		assert.Len(t, edges, 1)
 		assert.Equal(t, graph.Area("Area2"), edges[0].Area) // Area should be updated to Area2
 	})
 }
 
-func TestRepository_ReadNodeEdges(t *testing.T) {
+func TestRepository_ReadDemandEdges(t *testing.T) {
 	t.Run("Get edges from dynamodb", func(t *testing.T) {
 
 		db, err := dynamodb.NewTestDatabase()
@@ -286,9 +306,79 @@ func TestRepository_ReadNodeEdges(t *testing.T) {
 		err = repo.UpsertEdges(context.Background(), edges...)
 		assert.NoError(t, err)
 
-		retrievedEdges, err := repo.ReadNodeEdges(context.Background(), "A")
+		retrievedEdges, err := repo.ReadDemandEdges(context.Background(), "A")
 		assert.NoError(t, err)
 
+		assert.EqualValues(t, expected, retrievedEdges)
+	})
+}
+
+func TestRepository_ReadSupplyEdges(t *testing.T) {
+	t.Run("Get edges from dynamodb", func(t *testing.T) {
+		db, err := dynamodb.NewTestDatabase()
+		assert.NoError(t, err)
+
+		err = db.Migrate(context.Background())
+		assert.NoError(t, err)
+
+		defer db.Rollback(context.Background())
+
+		repo := New(db.Client)
+
+		edges := []graph.Edge{
+			{
+				From:  "A",
+				To:    "B",
+				Area:  "Area1",
+				Score: 67.77868,
+				TTL:   24 * time.Hour,
+			},
+			{
+				From:  "B",
+				To:    "C",
+				Area:  "Area1",
+				Score: 20,
+				TTL:   24 * time.Hour,
+			},
+			{
+				From:  "C",
+				To:    "D",
+				Area:  "Area1",
+				Score: 0.4556456,
+				TTL:   24 * time.Hour,
+			},
+			{
+				From:  "E",
+				To:    "B",
+				Area:  "Area1",
+				Score: 45.54656,
+				TTL:   24 * time.Hour,
+			},
+		}
+
+		expected := []graph.Edge{
+			{
+				From:  "A",
+				To:    "B",
+				Area:  "Area1",
+				Score: 67.77868,
+			},
+			{
+				From:  "E",
+				To:    "B",
+				Area:  "Area1",
+				Score: 45.54656,
+			},
+		}
+
+		err = repo.UpsertEdges(context.Background(), edges...)
+		assert.NoError(t, err)
+
+		retrievedEdges, err := repo.ReadSupplyEdges(context.Background(), "B")
+		assert.NoError(t, err)
+		sort.Slice(retrievedEdges, func(i, j int) bool {
+			return retrievedEdges[i].From < retrievedEdges[j].From && retrievedEdges[i].To < retrievedEdges[j].To
+		})
 		assert.EqualValues(t, expected, retrievedEdges)
 	})
 }
@@ -420,11 +510,11 @@ func TestRepository_RemoveEdges(t *testing.T) {
 		size = repo.Size(context.Background())
 		assert.Equal(t, 2, size)
 
-		retrievedEdges, err := repo.ReadNodeEdges(context.Background(), "A")
+		retrievedEdges, err := repo.ReadDemandEdges(context.Background(), "A")
 		assert.NoError(t, err)
 		assert.Len(t, retrievedEdges, 0) // All edges from A should be removed
 
-		retrievedEdges, err = repo.ReadNodeEdges(context.Background(), "B")
+		retrievedEdges, err = repo.ReadDemandEdges(context.Background(), "B")
 		assert.NoError(t, err)
 		assert.Len(t, retrievedEdges, 1) // Only edge to C should remain
 		assert.Equal(t, graph.Node("C"), retrievedEdges[0].To)
@@ -488,19 +578,107 @@ func TestRepository_RemoveNodeEdges(t *testing.T) {
 		assert.Equal(t, 1, size) // Only edges not related to "B" should remain
 
 		// Verify no edges from "B"
-		retrievedEdges, err := repo.ReadNodeEdges(context.Background(), "B")
+		retrievedEdges, err := repo.ReadDemandEdges(context.Background(), "B")
 		assert.NoError(t, err)
 		assert.Len(t, retrievedEdges, 0)
 
 		// Verify edges from "A"
-		retrievedEdges, err = repo.ReadNodeEdges(context.Background(), "A")
+		retrievedEdges, err = repo.ReadDemandEdges(context.Background(), "A")
 		assert.NoError(t, err)
 		assert.Len(t, retrievedEdges, 0)
 
 		// Verify edges from "C"
-		retrievedEdges, err = repo.ReadNodeEdges(context.Background(), "C")
+		retrievedEdges, err = repo.ReadDemandEdges(context.Background(), "C")
 		assert.NoError(t, err)
 		assert.Len(t, retrievedEdges, 1)
 		assert.Equal(t, graph.Node("D"), retrievedEdges[0].To) // Edge to D should still exist
+	})
+}
+
+func TestRepository_RemoveDemandEdges(t *testing.T) {
+	t.Run("Remove all edges of a node from dynamodb", func(t *testing.T) {
+		db, err := dynamodb.NewTestDatabase()
+
+		assert.NoError(t, err)
+
+		err = db.Migrate(context.Background())
+
+		assert.NoError(t, err)
+
+		defer db.Rollback(context.Background())
+
+		repo := New(db.Client)
+
+		edges := []graph.Edge{
+			{
+				From:  "O1",
+				To:    "D1",
+				Area:  "Area1",
+				Score: 67.77868,
+				TTL:   24 * time.Hour,
+			},
+			{
+				From:  "O1",
+				To:    "D2",
+				Area:  "Area1",
+				Score: 20,
+			},
+			{
+				From:  "O2",
+				To:    "D1",
+				Area:  "Area1",
+				Score: 0.4556456,
+				TTL:   24 * time.Hour,
+			},
+			{
+				From:  "O2",
+				To:    "D5",
+				Area:  "Area1",
+				Score: 45.54656,
+				TTL:   24 * time.Hour,
+			},
+			{
+				From:  "O3",
+				To:    "D5",
+				Area:  "Area1",
+				Score: 45.54656,
+				TTL:   24 * time.Hour,
+			},
+			{
+				From:  "O3",
+				To:    "D6",
+				Area:  "Area1",
+				Score: 45.54656,
+				TTL:   24 * time.Hour,
+			},
+		}
+
+		err = repo.UpsertEdges(context.Background(), edges...)
+		assert.NoError(t, err)
+
+		size := repo.Size(context.Background())
+		assert.Equal(t, 6, size)
+
+		// Remove all edges associated with node "O2"
+		err = repo.RemoveDemandEdges(context.Background(), "O2")
+		assert.NoError(t, err)
+
+		size = repo.Size(context.Background())
+		assert.Equal(t, 4, size) // Only edges not related to "O2" should remain
+
+		// Verify no edges from "O2"
+		retrievedEdges, err := repo.ReadDemandEdges(context.Background(), "O2")
+		assert.NoError(t, err)
+		assert.Len(t, retrievedEdges, 0)
+
+		// Verify edges from "O1"
+		retrievedEdges, err = repo.ReadDemandEdges(context.Background(), "O1")
+		assert.NoError(t, err)
+		assert.Len(t, retrievedEdges, 2)
+
+		// Verify edges from "O3"
+		retrievedEdges, err = repo.ReadDemandEdges(context.Background(), "O3")
+		assert.NoError(t, err)
+		assert.Len(t, retrievedEdges, 2)
 	})
 }

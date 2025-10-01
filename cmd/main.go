@@ -4,8 +4,7 @@ import (
 	"context"
 	"log"
 
-	"github.com/ashabykov/graph-building-in-dynamodb/internal/repository/dynamodb"
-	"github.com/ashabykov/graph-building-in-dynamodb/internal/repository/dynamodb/graph/based-on-gsi"
+	"github.com/ashabykov/graph-building-in-dynamodb/internal/repository/graph/dynamodb"
 )
 
 func Run() error {
@@ -26,7 +25,7 @@ func Run() error {
 		return err
 	}
 
-	graphRepo := based_on_gsi.New(dynamoDb.Client)
+	graphRepo := adjacency_lists_with_gsi_for_reverse_lookup.New(dynamoDb.Client)
 
 	return nil
 }

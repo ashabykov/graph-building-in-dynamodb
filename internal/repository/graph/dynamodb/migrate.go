@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/ashabykov/graph-building-in-dynamodb/internal/repository/dynamodb/migrate"
+	"github.com/ashabykov/graph-building-in-dynamodb/internal/repository/graph/dynamodb/migrate"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
@@ -17,8 +17,7 @@ type Migration interface {
 
 func (d *DynamoDb) Migrate(ctx context.Context) error {
 	migrations := []Migration{
-		&migrate.CreateBasedOnGSITable{},
-		&migrate.CreateBasedOnAdjacencyListTable{},
+		&migrate.CreateAdjacencyListsTableWithGSI{},
 	}
 	for _, migration := range migrations {
 		if err := migration.Up(ctx, d.Client); err != nil {
@@ -30,8 +29,7 @@ func (d *DynamoDb) Migrate(ctx context.Context) error {
 
 func (d *DynamoDb) Rollback(ctx context.Context) error {
 	migrations := []Migration{
-		&migrate.CreateBasedOnGSITable{},
-		&migrate.CreateBasedOnAdjacencyListTable{},
+		&migrate.CreateAdjacencyListsTableWithGSI{},
 	}
 	for _, migration := range migrations {
 		if err := migration.Down(ctx, d.Client); err != nil {

@@ -1,4 +1,4 @@
-package based_on_gsi
+package adjacency_lists_with_gsi_for_reverse_lookup
 
 import (
 	"context"
@@ -22,11 +22,23 @@ const (
 )
 
 type edgeDTO struct {
-	PK    string  `dynamodbav:"pk"`    // NODE#{FromNodeName}
-	SK    string  `dynamodbav:"sk"`    // EDGE#{ToNodeName}
+	PK    string  `dynamodbav:"pk"`    // DEMAND#{FromNodeName}
+	SK    string  `dynamodbav:"sk"`    // SUPPLY#{ToNodeName}
 	AK    string  `dynamodbav:"ak"`    // AREA#{AreaName}
 	Score float64 `dynamodbav:"score"` // score of the edge
 	TTL   int64   `dynamodbav:"ttl"`   // time to live (epoch time in seconds)
+}
+
+func parseDemand(pk string) graph.Node {
+	return graph.Node(pk[7:]) // Убираем "DEMAND#"
+}
+
+func parseSupply(sk string) graph.Node {
+	return graph.Node(sk[7:]) // Убираем "SUPPLY#"
+}
+
+func parseArea(ak string) graph.Area {
+	return graph.Area(ak[5:]) // Убираем "AREA#"
 }
 
 type Repository struct {
@@ -87,9 +99,9 @@ func (r *Repository) UpsertEdges(ctx context.Context, edges ...graph.Edge) error
 	return writeErr
 }
 
-// ReadOutEdges retrieves all edges associated with a specific node.
-func (r *Repository) ReadOutEdges(ctx context.Context, node graph.Node) ([]graph.Edge, error) {
-	key := node.Node()
+// ReadDemandEdges retrieves all edges from the demand node.
+func (r *Repository) ReadDemandEdges(ctx context.Context, node graph.Node) ([]graph.Edge, error) {
+	key := node.Demand()
 	queryResult, err := r.client.Query(ctx, &dynamodb.QueryInput{
 		TableName:              aws.String(TableName),
 		KeyConditionExpression: aws.String("pk = :pk"),
@@ -111,23 +123,19 @@ func (r *Repository) ReadOutEdges(ctx context.Context, node graph.Node) ([]graph
 		}
 
 		// Извлекаем имена узлов из ключей
-		fromName := dto.PK[5:] // Убираем "NODE#"
-		toName := dto.SK[5:]   // Убираем "EDGE#"
-		area := dto.AK[5:]     // Убираем "AREA#"
-
 		edges = append(edges, graph.Edge{
-			From:  graph.Node(fromName),
-			To:    graph.Node(toName),
+			From:  parseDemand(dto.PK),
+			To:    parseSupply(dto.SK),
+			Area:  parseArea(dto.AK),
 			Score: graph.Score(dto.Score),
-			Area:  graph.Area(area),
 		})
 	}
 	return edges, nil
 }
 
-// ReadInEdges retrieves all edges directed to a specific node.
-func (r *Repository) ReadInEdges(ctx context.Context, node graph.Node) ([]graph.Edge, error) {
-	key := node.Edge()
+// ReadSupplyEdges retrieves all edges directed to the supply node.
+func (r *Repository) ReadSupplyEdges(ctx context.Context, node graph.Node) ([]graph.Edge, error) {
+	key := node.Supply()
 
 	var last map[string]types.AttributeValue
 	edges := make([]graph.Edge, 0)
@@ -154,24 +162,11 @@ func (r *Repository) ReadInEdges(ctx context.Context, node graph.Node) ([]graph.
 				return nil, fmt.Errorf("failed to unmarshal edge: %w", err)
 			}
 
-			fromName := ""
-			if len(dto.PK) > 5 {
-				fromName = dto.PK[5:]
-			}
-			toName := ""
-			if len(dto.SK) > 5 {
-				toName = dto.SK[5:]
-			}
-			areaName := ""
-			if len(dto.AK) > 5 {
-				areaName = dto.AK[5:]
-			}
-
 			edges = append(edges, graph.Edge{
-				From:  graph.Node(fromName),
-				To:    graph.Node(toName),
+				From:  parseSupply(dto.PK),
+				To:    parseDemand(dto.SK),
+				Area:  parseArea(dto.AK),
 				Score: graph.Score(dto.Score),
-				Area:  graph.Area(areaName),
 			})
 		}
 
@@ -185,7 +180,7 @@ func (r *Repository) ReadInEdges(ctx context.Context, node graph.Node) ([]graph.
 
 // ReadAreaEdges retrieves all edges associated with a specific area.
 func (r *Repository) ReadAreaEdges(ctx context.Context, area graph.Area) ([]graph.Edge, error) {
-	key := area.Key()
+	key := area.Area()
 
 	var last map[string]types.AttributeValue
 	edges := make([]graph.Edge, 0)
@@ -211,25 +206,11 @@ func (r *Repository) ReadAreaEdges(ctx context.Context, area graph.Area) ([]grap
 			if err = attributevalue.UnmarshalMap(item, &dto); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal edge: %w", err)
 			}
-
-			fromName := ""
-			if len(dto.PK) > 5 {
-				fromName = dto.PK[5:]
-			}
-			toName := ""
-			if len(dto.SK) > 5 {
-				toName = dto.SK[5:]
-			}
-			areaName := ""
-			if len(dto.AK) > 5 {
-				areaName = dto.AK[5:]
-			}
-
 			edges = append(edges, graph.Edge{
-				From:  graph.Node(fromName),
-				To:    graph.Node(toName),
+				From:  parseDemand(dto.PK),
+				To:    parseSupply(dto.SK),
+				Area:  parseArea(dto.AK),
 				Score: graph.Score(dto.Score),
-				Area:  graph.Area(areaName),
 			})
 		}
 
@@ -287,12 +268,12 @@ func (r *Repository) RemoveEdges(ctx context.Context, edges ...graph.Edge) error
 // RemoveNodeEdges removes all edges associated with a specific node.
 func (r *Repository) RemoveNodeEdges(ctx context.Context, node graph.Node) error {
 	// Сначала получаем все рёбра от узла
-	outEdges, err := r.ReadOutEdges(ctx, node)
+	outEdges, err := r.ReadDemandEdges(ctx, node)
 	if err != nil {
 		return fmt.Errorf("failed to query node edges: %w", err)
 	}
 	// Затем получаем все рёбра к узлу
-	inEdges, err := r.ReadInEdges(ctx, node)
+	inEdges, err := r.ReadSupplyEdges(ctx, node)
 	if err != nil {
 		return fmt.Errorf("failed to query node edges: %w", err)
 	}
@@ -309,14 +290,74 @@ func (r *Repository) RemoveNodeEdges(ctx context.Context, node graph.Node) error
 	return nil
 }
 
+// RemoveDemandEdges удаляет все исходящие рёбра узла (pk = DEMAND#...).
+// Делает Query только по ключам (pk, sk) и батчевое удаление.
+func (r *Repository) RemoveDemandEdges(ctx context.Context, node graph.Node) error {
+	pk := node.Demand()
+	var last map[string]types.AttributeValue
+	var removeErr error
+	for {
+		out, err := r.client.Query(ctx, &dynamodb.QueryInput{
+			TableName:              aws.String(TableName),
+			KeyConditionExpression: aws.String("pk = :pk"),
+			ExpressionAttributeValues: map[string]types.AttributeValue{
+				":pk": &types.AttributeValueMemberS{Value: pk},
+			},
+			ProjectionExpression: aws.String("pk, sk"),
+			ExclusiveStartKey:    last,
+		})
+		if err != nil {
+			return fmt.Errorf("query out-edges: %w", err)
+		}
+		if len(out.Items) == 0 {
+			if len(out.LastEvaluatedKey) == 0 {
+				break
+			}
+		}
+
+		writeBatch := make([]types.WriteRequest, 0, len(out.Items))
+		for _, item := range out.Items {
+			pkAttr := item["pk"].(*types.AttributeValueMemberS).Value
+			skAttr := item["sk"].(*types.AttributeValueMemberS).Value
+			writeBatch = append(writeBatch, types.WriteRequest{
+				DeleteRequest: &types.DeleteRequest{
+					Key: map[string]types.AttributeValue{
+						"pk": &types.AttributeValueMemberS{Value: pkAttr},
+						"sk": &types.AttributeValueMemberS{Value: skAttr},
+					},
+				},
+			})
+		}
+
+		for requests := range slices.Chunk(writeBatch, batchSize) {
+			if _, err = r.client.BatchWriteItem(ctx, &dynamodb.BatchWriteItemInput{
+				RequestItems: map[string][]types.WriteRequest{
+					TableName: requests,
+				},
+			}); err != nil {
+				removeErr = errors.Join(removeErr, err)
+			}
+		}
+		if len(out.LastEvaluatedKey) == 0 {
+			break
+		}
+		last = out.LastEvaluatedKey
+	}
+
+	if removeErr != nil {
+		return fmt.Errorf("remove out-edges: %w", removeErr)
+	}
+	return nil
+}
+
 func makeDTO(edges ...graph.Edge) []edgeDTO {
 	items := make([]edgeDTO, 0, len(edges))
 	for _, edge := range edges {
 		ttl := time.Now().UTC().Add(edge.TTL).Unix()
 		dto := edgeDTO{
-			PK:    edge.From.Node(),
-			SK:    edge.To.Edge(),
-			AK:    edge.Area.Key(),
+			PK:    edge.Demand(),
+			SK:    edge.Supply(),
+			AK:    edge.Area.Area(),
 			Score: edge.Score.Float64(),
 			TTL:   ttl,
 		}
